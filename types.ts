@@ -4,6 +4,7 @@ import Document = require("mongoose");
 import mongoose = require("mongoose");
 
 export interface UserProps extends Document {
+  id: mongoose.Types.ObjectId;
   email: string;
   password: string;
   name?: string;

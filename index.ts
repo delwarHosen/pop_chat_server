@@ -3,7 +3,8 @@ import http from "http";
 import cors from "cors";
 import dotenv from "dotenv";
 import connectDB from "./config/db.js";
-import authRoutes from "routes/auth.routes"
+import authRoutes from "./routes/auth.routes.js";
+import { initializeSocket } from "./socket/socket.js";
 
 
 dotenv.config();
@@ -14,13 +15,17 @@ const server = http.createServer(app);
 app.use(express.json());
 app.use(cors());
 
-app.use("/auth",authRoutes)
+app.use("/auth", authRoutes)
 
 app.get("/", (req, res) => {
     res.send("server is running");
 });
 
 const PORT = process.env.PORT || 5000;
+
+
+// socet connected
+initializeSocket(server)
 
 connectDB().then(() => {
     console.log("Database Connected");
