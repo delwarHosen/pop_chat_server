@@ -10,56 +10,59 @@ dotenv.config();
 export function initializeSocket(server: any): SocketIOServer {
     const io = new SocketIOServer(server, {
         cors: {
-            origin: "*" //Allow all origin
+            origin: "*" // Allow all origin
         }
-    });//Socket io server instance
+    });
 
+    //  Authentication middleware
     io.use((socket: Socket, next) => {
         const token = socket.handshake.auth.token;
         if (!token) {
             return next(new Error("Authentication error: No token provided"));
-        };
+        }
 
         jwt.verify(token, process.env.JWT_SECRET as string, (err: any, decoded: any) => {
             if (err) {
-                return next(new Error("Authentication error: No token provided"));
+                return next(new Error("Authentication error: Invalid token"));
             }
 
-            // attach user data to socket
+            // Attach user data to socket
             let userData = decoded.user;
             socket.data = userData;
             socket.data.userId = userData.id;
-            next()
-
+            next();
         });
-        // when socket contacts register events
-        io.on("connection", async (socket: Socket) => {
-            const userId = socket.data.userId;
-            console.log(`User Connected: ${userId}, useName: ${socket.data.name}`);
+    });
 
-            // register event
-            registerChatEvents(io, socket);
-            registerUserEvents(io, socket);
+    //  Connection handler - middleware out
+    io.on("connection", async (socket: Socket) => {
+        const userId = socket.data.userId;
+        console.log(`User Connected: ${userId}, userName: ${socket.data.name}`);
 
-            // join all the conversations the user is part of
-            try {
-                const conversations = await Conversation.find({
-                    participants: userId,
-                }).select("_id");
+        // Register events
+        registerChatEvents(io, socket);
+        registerUserEvents(io, socket);
 
-                conversations.forEach((conversation) => {
-                    socket.join(conversation._id.toString());
-                });
-            } catch (error: any) {
-                console.log("Error joining conversations: ", error);
-            }
+        // Join all the conversations the user is part of
+        try {
+            const conversations = await Conversation.find({
+                participants: userId,
+            }).select("_id");
 
+            conversations.forEach((conversation) => {
+                socket.join(conversation._id.toString());
+                console.log(`User ${userId} joined conversation: ${conversation._id}`);
+            });
 
-            socket.on("disconnect", () => {
-                console.log(`User disconnected: ${userId}`)
-            })
-        })
-    })
+            console.log(`User ${userId} joined ${conversations.length} conversations`);
+        } catch (error: any) {
+            console.log("Error joining conversations: ", error);
+        }
+
+        socket.on("disconnect", () => {
+            console.log(`User disconnected: ${userId}`);
+        });
+    });
 
     return io;
 }
