@@ -53,7 +53,10 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
 
         try {
             if (!data.participants || !Array.isArray(data.participants)) {
-                return socket.emit("newConversation", { success: false, msg: "Invalid data" });
+                return socket.emit("newConversation", {
+                    success: false,
+                    msg: "Invalid data"
+                });
             }
 
             const sortedParticipants = [...data.participants].sort();
@@ -61,7 +64,7 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
             if (data.type === "direct") {
                 const existingConversation = await Conversation.findOne({
                     type: "direct",
-                    participants: { $all: sortedParticipants, $size: 2 },
+                    participants: { $all: sortedParticipants, $size: sortedParticipants.length },
                 })
                     .populate({
                         path: "participants",
@@ -74,7 +77,9 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                     .lean();
 
                 if (existingConversation) {
-                    // IMPORTANT: Return the existing conversation, don't create a new one
+                    // Join the socket to the existing conversation room
+                    socket.join(existingConversation._id.toString());
+
                     return socket.emit("newConversation", {
                         success: true,
                         data: { ...existingConversation, isNew: false },
@@ -82,14 +87,46 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                 }
             }
 
-            // Only create if no existing conversation was found
-            const conversation = await Conversation.create({
-                type: data.type,
-                participants: sortedParticipants,
-                name: data.name || "",
-                avatar: data.avatar || "",
-                createdBy: socket.data.userId,
-            });
+            // Try to create the conversation
+            let conversation;
+            try {
+                conversation = await Conversation.create({
+                    type: data.type,
+                    participants: sortedParticipants,
+                    name: data.name || "",
+                    avatar: data.avatar || "",
+                    createdBy: socket.data.userId,
+                });
+            } catch (createError: any) {
+                // Handle duplicate key error (race condition)
+                if (createError.code === 11000) {
+                    console.log("Duplicate conversation detected, fetching existing one");
+
+                    const existingConversation = await Conversation.findOne({
+                        type: data.type,
+                        participants: { $all: sortedParticipants, $size: sortedParticipants.length },
+                    })
+                        .populate({
+                            path: "participants",
+                            select: "name avatar email",
+                        })
+                        .populate({
+                            path: "lastMessage",
+                            select: "content senderId attachment createdAt",
+                        })
+                        .lean();
+
+                    if (existingConversation) {
+                        socket.join(existingConversation._id.toString());
+
+                        return socket.emit("newConversation", {
+                            success: true,
+                            data: { ...existingConversation, isNew: false },
+                        });
+                    }
+                }
+                throw createError;
+            }
 
             // Join all participants to the conversation room
             const connectedSockets = Array.from(io.sockets.sockets.values());
@@ -130,7 +167,6 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
             });
         }
     });
-
     // <---------New chat---------->
     socket.on("newMessage", async (data) => {
         console.log("newMessage event: ", data);
