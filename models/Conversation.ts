@@ -33,19 +33,12 @@ const ConversationSchema = new Schema<ConversationProps>(
         },
     },
     {
-       
         timestamps: true,
     }
 );
 
-
-ConversationSchema.index(
-    { participants: 1, type: 1 },
-    {
-        unique: true,
-        
-        partialFilterExpression: { type: "direct" }
-    }
-);
+// এখানে আমরা কোনো ইউনিক ইনডেক্স রাখবো না, যাতে ডুপ্লিকেট কী এরর না আসে
+ConversationSchema.index({ participants: 1 });
+ConversationSchema.index({ type: 1 });
 
 export default model<ConversationProps>("Conversation", ConversationSchema);
