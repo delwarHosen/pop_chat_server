@@ -52,17 +52,13 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
         console.log("newConversation event: ", data);
 
         try {
-
             if (!data.participants || !Array.isArray(data.participants)) {
                 return socket.emit("newConversation", { success: false, msg: "Invalid data" });
             }
 
-
-
             const sortedParticipants = [...data.participants].sort();
 
             if (data.type === "direct") {
-
                 const existingConversation = await Conversation.findOne({
                     type: "direct",
                     participants: { $all: sortedParticipants, $size: 2 },
@@ -71,9 +67,14 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                         path: "participants",
                         select: "name avatar email",
                     })
+                    .populate({
+                        path: "lastMessage",
+                        select: "content senderId attachment createdAt",
+                    })
                     .lean();
 
                 if (existingConversation) {
+                    // IMPORTANT: Return the existing conversation, don't create a new one
                     return socket.emit("newConversation", {
                         success: true,
                         data: { ...existingConversation, isNew: false },
@@ -81,7 +82,7 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                 }
             }
 
-
+            // Only create if no existing conversation was found
             const conversation = await Conversation.create({
                 type: data.type,
                 participants: sortedParticipants,
@@ -90,7 +91,7 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                 createdBy: socket.data.userId,
             });
 
-
+            // Join all participants to the conversation room
             const connectedSockets = Array.from(io.sockets.sockets.values());
             connectedSockets.forEach((participantSocket) => {
                 if (sortedParticipants.includes(participantSocket.data.userId)) {
@@ -98,11 +99,15 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                 }
             });
 
-
+            // Populate the newly created conversation
             const populatedConversation = await Conversation.findById(conversation._id)
                 .populate({
                     path: "participants",
                     select: "name avatar email",
+                })
+                .populate({
+                    path: "lastMessage",
+                    select: "content senderId attachment createdAt",
                 })
                 .lean();
 
@@ -110,7 +115,7 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                 throw new Error("Failed to populate conversation");
             }
 
-
+            // Emit to all participants in the room
             io.to(conversation._id.toString()).emit("newConversation", {
                 success: true,
                 data: { ...populatedConversation, isNew: true },
@@ -119,17 +124,9 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
         } catch (error: any) {
             console.log("newConversation error: ", error);
 
-
-            if (error.code === 11000) {
-                return socket.emit("newConversation", {
-                    success: false,
-                    msg: "Conversation already exists",
-                });
-            }
-
             socket.emit("newConversation", {
                 success: false,
-                msg: "Failed to create conversation",
+                msg: error.message || "Failed to create conversation",
             });
         }
     });
@@ -142,7 +139,7 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                 conversationId: data.conversationId,
                 senderId: data.sender.id,
                 content: data.content,
-                attachment: data.attachment,
+                attachment: data.attachment, // Make sure this is consistent
             });
 
             io.to(data.conversationId).emit("newMessage", {
