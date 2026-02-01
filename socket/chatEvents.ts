@@ -24,7 +24,7 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                 .sort({ updatedAt: -1 })
                 .populate({
                     path: "lastMessage",
-                    select: "content senderId attachement createdAt",
+                    select: "content senderId attachment createdAt",
                 })
                 .populate({
                     path: "participants",
@@ -53,11 +53,10 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
         try {
             const { participants, type } = data;
 
-            // ১. আইডিগুলোকে সবসময় স্ট্রিং হিসেবে সর্ট করুন (Consistency-র জন্য)
             const sortedParticipants = participants.map((id: any) => id.toString()).sort();
 
             if (type === "direct") {
-                // ২. $all এবং $size ব্যবহার করে নিখুঁতভাবে সার্চ করুন
+                
                 const existingConversation = await Conversation.findOne({
                     type: "direct",
                     participants: {
@@ -76,10 +75,10 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                 }
             }
 
-            // ৩. যদি না থাকে তবেই নতুন তৈরি করুন
+
             const conversation = await Conversation.create({
                 type,
-                participants: sortedParticipants, // সর্টেড আইডি সেভ হবে
+                participants: sortedParticipants, 
                 name: data.name || "",
                 avatar: data.avatar || "",
                 createdBy: socket.data.userId,
@@ -127,7 +126,7 @@ export function registerChatEvents(io: SocketIOServer, socket: Socket) {
                         name: data.sender.name,
                         avatar: data.sender.avatar,
                     },
-                    attachement: data.attachement,
+                    attachment: data.attachment,
                     createdAt: new Date().toISOString(),
                     conversationId: data.conversationId,
                 },
